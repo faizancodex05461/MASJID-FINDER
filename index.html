@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Masjid & Qibla Finder Pro</title>
+
+<style>
+body{
+    margin:0;
+    font-family:Arial, sans-serif;
+    background:#0f172a;
+    color:white;
+    text-align:center;
+}
+header{
+    background:#064e3b;
+    padding:15px;
+    font-size:20px;
+    font-weight:bold;
+}
+button{
+    padding:10px 15px;
+    margin:5px;
+    border:none;
+    border-radius:8px;
+    background:#16a34a;
+    color:white;
+    cursor:pointer;
+}
+.card{
+    background:#1e293b;
+    margin:10px;
+    padding:15px;
+    border-radius:10px;
+}
+#compass{
+    width:250px;
+    height:250px;
+    border:5px solid #16a34a;
+    border-radius:50%;
+    margin:20px auto;
+    position:relative;
+}
+#needle{
+    width:4px;
+    height:120px;
+    background:red;
+    position:absolute;
+    top:10px;
+    left:50%;
+    transform-origin:bottom center;
+}
+</style>
+</head>
+<body>
+
+<header>🕌 Sunni Masjid & Qibla Finder</header>
+
+<button onclick="getLocation()">📍 Find Nearby Masjid</button>
+<button onclick="getPrayerTimes()">🕰️ Prayer Times</button>
+
+<div class="card" id="locationData"></div>
+<div class="card" id="masjidList"></div>
+<div class="card" id="prayerTimes"></div>
+
+<h3>🧭 Live Qibla Compass</h3>
+<div id="compass">
+    <div id="needle"></div>
+</div>
+<div id="qiblaDegree"></div>
+
+<script>
+
+let userLat, userLon;
+
+// --- Get Location ---
+function getLocation(){
+    navigator.geolocation.getCurrentPosition(position=>{
+        userLat = position.coords.latitude;
+        userLon = position.coords.longitude;
+        document.getElementById("locationData").innerHTML =
+            "Your Location:<br>Lat: " + userLat + "<br>Lon: " + userLon;
+        findMasjid();
+        calculateQibla();
+    });
+}
+
+// --- Find Nearby Masjid using Overpass API ---
+function findMasjid(){
+    let query = `
+    [out:json];
+    node["amenity"="place_of_worship"]["religion"="muslim"]
+    (around:3000,${userLat},${userLon});
+    out;`;
+
+    fetch("https://overpass-api.de/api/interpreter",{
+        method:"POST",
+        body:query
+    })
+    .then(res=>res.json())
+    .then(data=>{
+        let output="<h3>Nearby Masjid</h3>";
+        data.elements.forEach(m=>{
+            let distance = getDistance(userLat,userLon,m.lat,m.lon).toFixed(2);
+            output+=`
+            <div>
+            🕌 ${m.tags.name || "Unnamed Masjid"} <br>
+            Distance: ${distance} km <br>
+            <a style="color:lightgreen" target="_blank"
+            href="https://www.google.com/maps?q=${m.lat},${m.lon}">
+            Open in Maps</a>
+            <hr>
+            </div>`;
+        });
+        document.getElementById("masjidList").innerHTML = output;
+    });
+}
+
+// --- Haversine Distance ---
+function getDistance(lat1,lon1,lat2,lon2){
+    const R=6371;
+    const dLat=(lat2-lat1)*Math.PI/180;
+    const dLon=(lon2-lon1)*Math.PI/180;
+    const a=
+        Math.sin(dLat/2)*Math.sin(dLat/2)+
+        Math.cos(lat1*Math.PI/180)*
+        Math.cos(lat2*Math.PI/180)*
+        Math.sin(dLon/2)*Math.sin(dLon/2);
+    return R*(2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a)));
+}
+
+// --- Qibla Calculation ---
+function calculateQibla(){
+    const kaabaLat=21.4225;
+    const kaabaLon=39.8262;
+
+    let dLon=(kaabaLon-userLon)*Math.PI/180;
+    let lat1=userLat*Math.PI/180;
+    let lat2=kaabaLat*Math.PI/180;
+
+    let y=Math.sin(dLon);
+    let x=Math.cos(lat1)*Math.tan(lat2)-Math.sin(lat1)*Math.cos(dLon);
+
+    let brng=Math.atan2(y,x)*180/Math.PI;
+    let qibla=(brng+360)%360;
+
+    document.getElementById("qiblaDegree").innerHTML=
+        "Qibla Direction: "+qibla.toFixed(2)+"°";
+
+    startCompass(qibla);
+}
+
+// --- Live Compass ---
+function startCompass(qibla){
+    window.addEventListener("deviceorientationabsolute",e=>{
+        let heading=e.alpha;
+        let rotation=qibla-heading;
+        document.getElementById("needle").style.transform=
+            "rotate("+rotation+"deg)";
+    });
+}
+
+// --- Prayer Times ---
+function getPrayerTimes(){
+    fetch(`https://api.aladhan.com/v1/timings?latitude=${userLat}&longitude=${userLon}&method=1`)
+    .then(res=>res.json())
+    .then(data=>{
+        let t=data.data.timings;
+        document.getElementById("prayerTimes").innerHTML=`
+        <h3>Prayer Times</h3>
+        Fajr: ${t.Fajr}<br>
+        Dhuhr: ${t.Dhuhr}<br>
+        Asr: ${t.Asr}<br>
+        Maghrib: ${t.Maghrib}<br>
+        Isha: ${t.Isha}`;
+    });
+}
+
+</script>
+</body>
+  </html>
